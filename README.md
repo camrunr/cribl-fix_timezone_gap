@@ -1,6 +1,6 @@
 # Fix Errant Timezones
 
-This simple pipeline provides to methods to fix bad timezones:
+This simple pipeline provides two methods to fix bad timezones:
 
 1) Using a CSV lookup file with `host` and `adj` columns. The `adj` column is expected to be in seconds. For example, 10800 would be a 3 hour adjustment. Any host that matches would have its time adjusted by the value in `adj`.
 
