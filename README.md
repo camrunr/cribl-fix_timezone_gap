@@ -9,5 +9,3 @@ This simple pipeline provides two methods to fix bad timezones:
 The pipeline can be used as is, in a Chain function from another pipeline, or as a pre-processing pipeline.
 
 Enjoy, and feel free to submit PRs for bug fixes or improvements.
-
-Jon

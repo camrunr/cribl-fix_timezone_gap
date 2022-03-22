@@ -9,11 +9,10 @@
         "index": 1,
         "disabled": true
       },
-      "wzLjXO": {
+      "uWJGEk": {
         "name": "Fix the time",
-        "index": 2,
-        "disabled": false,
-        "description": "Either via lookup, or via logic"
+        "description": "Either via lookup, or via logic",
+        "index": 2
       },
       "yndSqc": {
         "name": "DEBUG: Output",
@@ -25,39 +24,41 @@
     "asyncFuncTimeout": 1000,
     "functions": [
       {
+        "id": "comment",
         "filter": "true",
         "conf": {
           "comment": "Fix bad timezones =======\nAuthor: Jon Rust <jon@cribl.io>\n\nIf the host is in host_tzs.csv use the adjustment provided there (expecting column 'adj', with a value in seconds)\n\nElse: If the time is off by something close to a 30 minute boundary, add the snapped 30 minute boundary count to _time. 'Close' means +/- 10 seconds by default. Adjust as needed in the filter of the 2nd eval of Fix the time group (rule 7)\n\nExample: 'now() - _time' is off by +3600.230, that's 2 30 minute sections, and it's very close (230 ms). In this case, we'll add exactly 3600 to _time.\n\nExample: 'now() - _time' is off by -1804 seconds. We will subtract 1800 seconds from _time.\n\nExample: 'now() - _time' is off by 603 seconds. No change will be made as it's not close to a multiple of 1800."
-        },
-        "id": "comment"
+        }
       },
       {
+        "id": "eval",
         "filter": "true",
+        "disabled": true,
         "conf": {
           "add": [
             {
               "name": "fakedata",
-              "value": "[`${C.Time.strftime(Date.now()/1000 + 10801,\"%Y/%m/%d %H:%M:%S\")} logging mclogface`,`${C.Time.strftime(Date.now()/1000 + 10802,\"%Y/%m/%d %H:%M:%S\")} logging mclogface`,`${C.Time.strftime(Date.now()/1000 + 10803,\"%Y/%m/%d %H:%M:%S\")} logging mclogface`]"
+              "value": "[`${C.Time.strftime(Date.now()/1000 + 10799,\"%Y/%m/%d %H:%M:%S\")} logging mclogface`,`${C.Time.strftime(Date.now()/1000 + 10799,\"%Y/%m/%d %H:%M:%S\")} logging mclogface`,`${C.Time.strftime(Date.now()/1000 + 10799,\"%Y/%m/%d %H:%M:%S\")} logging mclogface`]"
             }
           ]
         },
-        "id": "eval",
-        "disabled": true,
         "description": "Set the offset below in seconds by setting the event time (_time) forward or backward relative to Date.now()/1000",
         "groupId": "r4S33B"
       },
       {
+        "id": "unroll",
         "filter": "true",
+        "disabled": true,
         "conf": {
           "srcExpr": "fakedata",
           "dstField": "_raw"
         },
-        "id": "unroll",
-        "groupId": "r4S33B",
-        "disabled": true
+        "groupId": "r4S33B"
       },
       {
+        "id": "eval",
         "filter": "true",
+        "disabled": true,
         "conf": {
           "add": [
             {
@@ -69,9 +70,7 @@
             "fakedata"
           ]
         },
-        "id": "eval",
-        "groupId": "r4S33B",
-        "disabled": true
+        "groupId": "r4S33B"
       },
       {
         "filter": "C.Lookup('host_tzs.csv','host').match(host)",
@@ -92,58 +91,66 @@
           ]
         },
         "id": "eval",
-        "groupId": "wzLjXO",
+        "disabled": false,
+        "groupId": "uWJGEk",
         "description": "Use the lookup file to decide",
-        "disabled": false
+        "final": true
+      },
+      {
+        "id": "comment",
+        "filter": "true",
+        "conf": {
+          "comment": "If the lookup failed, use the power of maths\n__now       :: Clock time at event receipt\n__max_lag   :: For _time in the past, max allowed (apparent) transit lag\n__tz_unit   :: Use hour zones (3600), or half-hour zones (1800)\n__time_diff :: Difference between now-now and _time (not then-now; you just missed it)\n__idx_lag   :: How long between event creation and receiving the event here \ntime_adj    :: If the lag is under max, adjust by full time zone units. If the lag\n               is in the future, adjust regardless (ignore max lag). This field will \n               survive through to the destination for debugging purposes.\n_time       :: Adjust the time by time_adj"
+        },
+        "groupId": "uWJGEk"
       },
       {
         "filter": "!time_adj",
         "conf": {
           "add": [
             {
+              "name": "__now",
+              "value": "Date.now()/1000"
+            },
+            {
+              "name": "__max_lag",
+              "value": "60"
+            },
+            {
+              "name": "__tz_unit",
+              "value": "3600"
+            },
+            {
               "name": "__time_diff",
-              "value": "Math.round(Date.now()/1000 - _time,0)"
+              "value": "Math.round(__now - _time,0)"
             },
             {
-              "name": "__time_diff_abs",
-              "value": "Math.abs(__time_diff)"
-            },
-            {
-              "name": "__half_snap_diff_abs",
-              "value": "__time_diff_abs % 1800"
-            },
-            {
-              "name": "__half_snap",
-              "value": "Math.round(__time_diff/1800,0)"
-            }
-          ]
-        },
-        "id": "eval",
-        "description": "Calculate dome diffs",
-        "groupId": "wzLjXO",
-        "disabled": false
-      },
-      {
-        "filter": "__half_snap && (1770 < __time_diff_abs < 86430 && __half_snap_diff_abs < 10)",
-        "conf": {
-          "add": [
-            {
-              "name": "_time",
-              "value": "_time + __half_snap * 1800"
+              "name": "__idx_lag",
+              "value": "__tz_unit + __time_diff % __tz_unit"
             },
             {
               "name": "time_adj",
-              "value": "`${__half_snap/2}h`"
+              "value": "__idx_lag < __max_lag ? Math.floor(__time_diff/__tz_unit) * __tz_unit : 0"
+            },
+            {
+              "name": "time_adj",
+              "value": "(_time > __now) && (time_adj == 0) ? Math.floor(__time_diff/__tz_unit) * __tz_unit : time_adj"
+            },
+            {
+              "name": "_time",
+              "value": "_time+time_adj"
             }
           ]
         },
         "id": "eval",
-        "description": "Only fix time for events that are roughly 30 minutes off up to 1 day off (plus or minus) and the gap from 30min snap is < 30 seconds",
-        "groupId": "wzLjXO",
-        "disabled": false
+        "disabled": false,
+        "description": "Set some base fields: Now, the max index delay we'll allow (for times in the past), the TZ unit (either 1800s or 3600s)",
+        "groupId": "uWJGEk"
       },
       {
+        "id": "eval",
         "filter": "true",
+        "disabled": true,
         "conf": {
           "add": [
             {
@@ -156,8 +163,6 @@
             }
           ]
         },
-        "id": "eval",
-        "disabled": true,
         "groupId": "yndSqc"
       }
     ]
