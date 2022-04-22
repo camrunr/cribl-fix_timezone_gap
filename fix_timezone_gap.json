@@ -10,7 +10,7 @@
         "disabled": true
       },
       "uWJGEk": {
-        "name": "Fix the time",
+        "name": "Fix the time v2",
         "description": "Either via lookup, or via logic",
         "index": 2
       },
@@ -27,7 +27,7 @@
         "id": "comment",
         "filter": "true",
         "conf": {
-          "comment": "Fix bad timezones =======\nAuthor: Jon Rust <jon@cribl.io>\n\nIf the host is in host_tzs.csv use the adjustment provided there (expecting column 'adj', with a value in seconds)\n\nElse: If the time is off by something close to a 30 minute boundary, add the snapped 30 minute boundary count to _time. 'Close' means +/- 10 seconds by default. Adjust as needed in the filter of the 2nd eval of Fix the time group (rule 7)\n\nExample: 'now() - _time' is off by +3600.230, that's 2 30 minute sections, and it's very close (230 ms). In this case, we'll add exactly 3600 to _time.\n\nExample: 'now() - _time' is off by -1804 seconds. We will subtract 1800 seconds from _time.\n\nExample: 'now() - _time' is off by 603 seconds. No change will be made as it's not close to a multiple of 1800."
+          "comment": "Fix bad timezones v2 =======\nAuthor: Jon Rust <jon@cribl.io>\nReleased: 2022-04-22\n\nIf the host is in host_tzs.csv use the adjustment provided there (expecting column 'adj', with a value in seconds)\n\nElse: If the time is off by something close to a timezone boundary, add the boundary count to _time. 'Close' means 60 seconds by default. Adjust __max_lag as needed in Rule 7. You can also change the timezone units. Default is 3600 (1hr) zones. If you have half-hour zones in play, change this to 1800.\n\nExample: 'now() - _time' is off by +3600.230, that's 1 60 minute section, and it's very close (230 ms). In this case, we'll add exactly 3600 to _time.\n\nExample: 'now() - _time' is off by -1804 seconds. We will subtract 1800 seconds from _time.\n\nExample: 'now() - _time' is off by 603 seconds. No change will be made as it's not close to a multiple of 1800."
         }
       },
       {
@@ -73,7 +73,9 @@
         "groupId": "r4S33B"
       },
       {
+        "id": "eval",
         "filter": "C.Lookup('host_tzs.csv','host').match(host)",
+        "disabled": false,
         "conf": {
           "add": [
             {
@@ -90,18 +92,16 @@
             }
           ]
         },
-        "id": "eval",
-        "disabled": false,
         "groupId": "uWJGEk",
         "description": "Use the lookup file to decide",
         "final": true
       },
       {
-        "id": "comment",
         "filter": "true",
         "conf": {
           "comment": "If the lookup failed, use the power of maths\n__now       :: Clock time at event receipt\n__max_lag   :: For _time in the past, max allowed (apparent) transit lag\n__tz_unit   :: Use hour zones (3600), or half-hour zones (1800)\n__time_diff :: Difference between now-now and _time (not then-now; you just missed it)\n__idx_lag   :: How long between event creation and receiving the event here \ntime_adj    :: If the lag is under max, adjust by full time zone units. If the lag\n               is in the future, adjust regardless (ignore max lag). This field will \n               survive through to the destination for debugging purposes.\n_time       :: Adjust the time by time_adj"
         },
+        "id": "comment",
         "groupId": "uWJGEk"
       },
       {
@@ -126,15 +126,15 @@
             },
             {
               "name": "__idx_lag",
-              "value": "__tz_unit + __time_diff % __tz_unit"
+              "value": "(__tz_unit + __time_diff) % __tz_unit"
             },
             {
-              "name": "time_adj",
+              "name": "__time_adj",
               "value": "__idx_lag < __max_lag ? Math.floor(__time_diff/__tz_unit) * __tz_unit : 0"
             },
             {
               "name": "time_adj",
-              "value": "(_time > __now) && (time_adj == 0) ? Math.floor(__time_diff/__tz_unit) * __tz_unit : time_adj"
+              "value": "(_time > __now) && __time_adj == 0 ? Math.floor(__time_diff/__tz_unit) * __tz_unit : __time_adj"
             },
             {
               "name": "_time",
@@ -144,7 +144,7 @@
         },
         "id": "eval",
         "disabled": false,
-        "description": "Set some base fields: Now, the max index delay we'll allow (for times in the past), the TZ unit (either 1800s or 3600s)",
+        "description": "Infer a solution",
         "groupId": "uWJGEk"
       },
       {
